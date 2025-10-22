@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(CURL REQUIRED)
+find_package(Threads REQUIRED)
+
 add_library(trading_engine STATIC
     src/trading/engine.cpp
 )
@@ -43,4 +46,27 @@ add_executable(trading_ui_demo
 )
 
 target_link_libraries(trading_ui_demo PRIVATE trading_ui)
+
+enable_testing()
+
+add_executable(pumpfun_client_tests
+    tests/market_data/test_pumpfun_client.cpp
+    src/market_data/pumpfun_client.cpp
+)
+
+target_include_directories(pumpfun_client_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/stubs
+)
+
+target_link_libraries(pumpfun_client_tests
+    PRIVATE
+        CURL::libcurl
+        Threads::Threads
+)
+
+target_compile_features(pumpfun_client_tests PRIVATE cxx_std_17)
+
+add_test(NAME pumpfun_client_tests COMMAND pumpfun_client_tests)
 

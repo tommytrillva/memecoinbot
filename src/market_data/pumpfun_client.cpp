@@ -295,10 +295,19 @@ std::string PumpFunClient::buildUrl(
     const std::vector<std::pair<std::string, std::string>>& query_params) const {
   std::string url = base_url_;
   if (!endpoint.empty()) {
-    if (!url.empty() && endpoint.front() != '/') {
-      url += "/";
+    if (url.empty()) {
+      url = endpoint;
+    } else if (endpoint.front() == '/') {
+      if (!url.empty() && url.back() == '/') {
+        url.pop_back();
+      }
+      url += endpoint;
+    } else {
+      if (url.back() != '/') {
+        url.push_back('/');
+      }
+      url += endpoint;
     }
-    url += endpoint.front() == '/' ? endpoint.substr(1) : endpoint;
   }
 
   if (!query_params.empty()) {
