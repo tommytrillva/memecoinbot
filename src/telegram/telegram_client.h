@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "../security/secret_store.h"
@@ -15,6 +16,7 @@ struct TradeRequest {
     double amount = 0.0;
     std::string side;
     std::string otp_code;
+    std::optional<double> limit_price;
 };
 
 // TelegramClient receives updates from the Telegram gateway and performs

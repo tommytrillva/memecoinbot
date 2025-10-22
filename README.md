@@ -8,10 +8,10 @@ base:
   built around `trading::RiskManagedEngine`.
 * **Pump.fun market-data client** – HTTP polling utilities for fetching token
   metadata, quotes, and candles through QuickNode/Moralis style endpoints.
-* **Security primitives** – AES-256-GCM encrypted secret store and RFC 6238
-  TOTP validator used by higher-level automation.
-* **Telegram control plane** – optional command bot plus a TOTP-gated client to
-  forward validated trade requests.
+* **Security primitives** – AES-256-GCM encrypted secret store, RFC 6238
+  TOTP validator, and an Ed25519 Solana signer for wallet operations.
+* **Telegram control plane** – optional command bot with mandatory TOTP codes
+  forwarded through the validation client before trades reach the engine.
 * **Dear ImGui console** – lightweight UI scaffold for manual interaction.
 
 > ⚠️ Phantom wallet signing, real trade submission, and end-to-end venue
@@ -118,9 +118,8 @@ tests/
 
 ## Known gaps
 
-* No Phantom wallet implementation or Solana transaction signing
-* Pump.fun client has no retry/backoff and is not wired into the engine
-* Telegram TOTP validation helper is not connected to the chat bot wrapper
-* Logging is limited to `std::cout`/`std::cerr`
+* Venue/exchange adapters remain stubs; orders are still simulated
+* Pump.fun integration uses polling subscriptions—no websocket streaming yet
+* Dear ImGui console still lacks a production renderer/backend
 
 These items are tracked in the accompanying assessment report and gap plan.

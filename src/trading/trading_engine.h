@@ -60,6 +60,8 @@ public:
     virtual OrderReceipt sell(const OrderRequest& request) = 0;
     virtual StatusReport status(const std::optional<std::string>& symbol) const = 0;
 
+    virtual void updateMarkPrice(const std::string& symbol, double price) = 0;
+
     virtual void subscribeToTradeUpdates(TradeCallback callback) = 0;
     virtual void subscribeToAlerts(AlertCallback callback) = 0;
     virtual void subscribeToStatusUpdates(StatusCallback callback) = 0;

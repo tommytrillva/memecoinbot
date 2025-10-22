@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "trading/trading_engine.h"
+#include "telegram/telegram_client.h"
 
 namespace telegram {
 
@@ -22,7 +23,9 @@ class TelegramBot {
 public:
     using ChatId = std::int64_t;
 
-    TelegramBot(const std::string& token, trading::TradingEngine& engine);
+    TelegramBot(const std::string& token,
+                trading::TradingEngine& engine,
+                TelegramClient& client);
     ~TelegramBot();
 
     TelegramBot(const TelegramBot&) = delete;
@@ -51,7 +54,12 @@ private:
     static std::vector<std::string> tokenize(const std::string& text);
     static std::optional<double> parseDouble(const std::string& token);
 
-    trading::OrderRequest parseOrderRequest(const std::vector<std::string>& tokens) const;
+    struct ParsedTradeCommand {
+        trading::OrderRequest order;
+        std::string otp;
+    };
+
+    ParsedTradeCommand parseTradeCommand(const std::vector<std::string>& tokens) const;
     std::string formatReceipt(const trading::OrderReceipt& receipt) const;
     std::string formatStatus(const trading::StatusReport& status) const;
 
@@ -63,6 +71,7 @@ private:
 
     TgBot::Bot bot_;
     trading::TradingEngine& engine_;
+    TelegramClient& client_;
 
     std::shared_ptr<std::atomic<bool>> aliveFlag_;
     std::atomic<bool> running_{false};

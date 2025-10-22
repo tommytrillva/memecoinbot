@@ -62,6 +62,10 @@ class PumpFunClient {
  public:
   using SubscriptionId = std::uint64_t;
   using QuoteCallback = std::function<void(const TokenQuote&)>;
+  using HttpGetFunction = std::function<std::string(
+      const std::string& endpoint,
+      const std::vector<std::pair<std::string, std::string>>& query_params,
+      const std::unordered_map<std::string, std::string>& extra_headers)>;
 
   struct RequestOptions {
     std::vector<std::pair<std::string, std::string>> query_params;
@@ -72,7 +76,8 @@ class PumpFunClient {
                 std::string api_key = {},
                 std::string metadata_endpoint = "/metadata",
                 std::string quote_endpoint = "/quotes",
-                std::string candles_endpoint = "/candles");
+                std::string candles_endpoint = "/candles",
+                HttpGetFunction http_getter = {});
   ~PumpFunClient();
 
   PumpFunClient(const PumpFunClient&) = delete;
@@ -116,6 +121,9 @@ class PumpFunClient {
   void setDefaultHeaders(std::unordered_map<std::string, std::string> headers);
   std::unordered_map<std::string, std::string> defaultHeaders() const;
 
+  void setRetryPolicy(std::size_t max_attempts,
+                      std::chrono::milliseconds initial_backoff);
+
  private:
   friend class PumpFunClientTestPeer;
 
@@ -139,6 +147,9 @@ class PumpFunClient {
   std::string performGet(const std::string& endpoint,
                          const std::vector<std::pair<std::string, std::string>>& query_params,
                          const std::unordered_map<std::string, std::string>& extra_headers) const;
+  std::string performCurlGet(const std::string& endpoint,
+                             const std::vector<std::pair<std::string, std::string>>& query_params,
+                             const std::unordered_map<std::string, std::string>& extra_headers) const;
   static std::string encodeQueryParam(const std::string& value);
 
   static size_t curlWriteCallback(void* contents, size_t size, size_t nmemb, void* userp);
@@ -150,6 +161,11 @@ class PumpFunClient {
   std::string quote_endpoint_;
   std::string candles_endpoint_;
   std::unordered_map<std::string, std::string> default_headers_;
+
+  HttpGetFunction http_getter_;
+
+  std::atomic<std::size_t> max_attempts_{3};
+  std::atomic<long long> retry_backoff_ms_{200};
 
   bool curl_initialized_ = false;
 

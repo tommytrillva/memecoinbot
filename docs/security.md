@@ -38,6 +38,14 @@ Operational checklist:
   on the host running the bot. Large skews will cause false negatives.
 - Log failed 2FA attempts and alert on repeated failures from a single chat.
 
+## Solana signing
+
+`security::SolanaSigner` converts Base58-encoded Solana keypairs into raw
+Ed25519 key material. Use it to sign transaction payloads after retrieving the
+encrypted keypair from the secret store. Always verify signatures with the
+derived public key before broadcasting and rotate keys through the standard
+secret rotation workflow.
+
 ## Dependency and binary auditing
 
 Regular dependency and binary integrity audits are required to keep third-party
