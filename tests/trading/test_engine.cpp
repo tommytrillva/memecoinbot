@@ -51,6 +51,8 @@ bool TestRiskLimits() {
     engine.updateRiskLimits(limits);
     engine.start();
 
+    engine.updateMarkPrice("COIN", 1.0);
+
     trading::OrderRequest first;
     first.symbol = "COIN";
     first.quantity = 4.0;

@@ -14,8 +14,8 @@ class TotpValidator {
   public:
     TotpValidator();
 
-    // Validates the provided |code| against the secret. |code| should be a
-    // six-digit string. |allowed_drift| indicates the number of 30 second
+    // Validates the provided |code| against the secret. |code| should contain
+    // between six and eight digits. |allowed_drift| indicates the number of 30 second
     // windows to check on either side of the current time to account for
     // small clock differences.
     bool validate(const std::string &base32_secret, const std::string &code,
@@ -25,7 +25,8 @@ class TotpValidator {
   private:
     static std::vector<std::uint8_t> base32_decode(const std::string &input);
     static std::uint32_t generate_totp(const std::vector<std::uint8_t> &secret,
-                                       std::uint64_t counter);
+                                       std::uint64_t counter,
+                                       std::size_t digits);
 };
 
 }  // namespace security

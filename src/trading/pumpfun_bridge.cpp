@@ -1,5 +1,6 @@
 #include "trading/pumpfun_bridge.h"
 
+#include <stdexcept>
 #include <utility>
 
 #include "common/logging.h"
@@ -21,13 +22,10 @@ void PumpFunMarketDataBridge::start(const std::vector<std::string>& symbols,
         return;
     }
 
-    if (running_.exchange(true)) {
-        stop();
-        running_.store(true);
-    }
+    stop();
 
-    std::lock_guard<std::mutex> lock(mutex_);
-    subscriptions_.clear();
+    std::unordered_map<std::string, std::uint64_t> newSubscriptions;
+    newSubscriptions.reserve(symbols.size());
 
     for (const auto& symbol : symbols) {
         try {
@@ -41,12 +39,24 @@ void PumpFunMarketDataBridge::start(const std::vector<std::string>& symbols,
                     engine_.updateMarkPrice(quote.mint, quote.price);
                 },
                 interval);
-            subscriptions_.emplace(symbol, id);
+            newSubscriptions.emplace(symbol, id);
         } catch (const std::exception& ex) {
             LOG_ERROR(std::string("Failed to subscribe to Pump.fun quotes for ") + symbol +
                       ": " + ex.what());
         }
     }
+
+    if (newSubscriptions.empty()) {
+        running_.store(false);
+        throw std::runtime_error("PumpFunMarketDataBridge failed to establish any Pump.fun subscriptions");
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        subscriptions_.swap(newSubscriptions);
+    }
+
+    running_.store(true);
 }
 
 void PumpFunMarketDataBridge::stop() {
