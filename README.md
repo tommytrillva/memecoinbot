@@ -1,0 +1,2 @@
+# memecoinbot
+memecoin bot
