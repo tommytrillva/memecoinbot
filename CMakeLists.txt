@@ -1,4 +1,17 @@
 cmake_minimum_required(VERSION 3.16)
+
+# When building on Windows the dependencies (libcurl/OpenSSL) are typically
+# sourced through vcpkg. If the environment variable is present we
+# automatically wire up the toolchain to save developers from editing their
+# cache manually inside Visual Studio.
+if (WIN32 AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  if (DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE
+        "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "Vcpkg toolchain file" FORCE)
+  endif()
+endif()
+
 project(memecoinbot LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
