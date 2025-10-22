@@ -6,7 +6,7 @@
 #include <thread>
 
 int main() {
-    auto engine = std::make_shared<trading::TradingEngine>(trading::RiskLimits{50.0, 200.0});
+    auto engine = std::make_shared<trading::RiskManagedEngine>(trading::RiskLimits{50.0, 200.0});
     ui::TradingImGuiApp app;
     app.attachEngine(engine);
     app.initialize();

@@ -7,6 +7,11 @@
 
 namespace trading {
 
+struct RiskLimits {
+    double maxPosition{0.0};
+    double maxExposure{0.0};
+};
+
 struct OrderRequest {
     std::string symbol;
     double quantity{0.0};
@@ -44,6 +49,12 @@ public:
     using StatusCallback = std::function<void(const StatusReport&)>;
 
     virtual ~TradingEngine() = default;
+
+    virtual void start() = 0;
+    virtual void stop() = 0;
+    virtual bool isRunning() const = 0;
+
+    virtual void updateRiskLimits(const RiskLimits& limits) = 0;
 
     virtual OrderReceipt buy(const OrderRequest& request) = 0;
     virtual OrderReceipt sell(const OrderRequest& request) = 0;
