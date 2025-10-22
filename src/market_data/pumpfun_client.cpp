@@ -14,6 +14,46 @@
 
 namespace market_data {
 namespace {
+// CurlGlobalGuard coordinates process-wide lifetime management for libcurl.
+// It allows PumpFunClient instances to share a single global initialization
+// while ensuring that curl_global_cleanup is only executed after the final
+// client releases its reference.
+class CurlGlobalGuard {
+ public:
+  void acquire() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (ref_count_ == 0) {
+      if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
+        throw std::runtime_error("Failed to initialize cURL");
+      }
+      initialized_ = true;
+    }
+    ++ref_count_;
+  }
+
+  void release() noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (ref_count_ == 0) {
+      return;
+    }
+    --ref_count_;
+    if (ref_count_ == 0 && initialized_) {
+      curl_global_cleanup();
+      initialized_ = false;
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::size_t ref_count_ = 0;
+  bool initialized_ = false;
+};
+
+CurlGlobalGuard& curlGlobalGuard() {
+  static CurlGlobalGuard guard;
+  return guard;
+}
+
 nlohmann::json parseJsonOrThrow(const std::string& payload, const std::string& context) {
   try {
     if (payload.empty()) {
@@ -55,9 +95,7 @@ PumpFunClient::PumpFunClient(std::string base_url,
       metadata_endpoint_(ensureEndpoint(metadata_endpoint)),
       quote_endpoint_(ensureEndpoint(quote_endpoint)),
       candles_endpoint_(ensureEndpoint(candles_endpoint)) {
-  if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
-    throw std::runtime_error("Failed to initialize cURL");
-  }
+  curlGlobalGuard().acquire();
   curl_initialized_ = true;
 
   if (!api_key_.empty()) {
@@ -70,7 +108,7 @@ PumpFunClient::~PumpFunClient() {
   drainSubscriptions();
 
   if (curl_initialized_) {
-    curl_global_cleanup();
+    curlGlobalGuard().release();
     curl_initialized_ = false;
   }
 }
