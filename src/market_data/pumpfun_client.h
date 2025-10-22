@@ -16,6 +16,8 @@
 
 namespace market_data {
 
+class PumpFunClientTestPeer;
+
 // Represents token level metadata returned by Pump.fun indexers.
 struct TokenMetadata {
   std::string mint;
@@ -112,6 +114,8 @@ class PumpFunClient {
   std::unordered_map<std::string, std::string> defaultHeaders() const;
 
  private:
+  friend class PumpFunClientTestPeer;
+
   struct Subscription {
     std::string token_mint;
     QuoteCallback callback;
