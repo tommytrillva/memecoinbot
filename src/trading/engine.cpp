@@ -6,6 +6,7 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -263,25 +264,46 @@ bool RiskManagedEngine::applyRiskChecks(const Order& order) const {
         return false;
     }
 
-    const auto notional = [this](const std::string& sym, double qty) {
-        const double absoluteQty = std::abs(qty);
-        auto priceIt = mark_prices_.find(sym);
-        const double price = (priceIt != mark_prices_.end() && priceIt->second > 0.0)
-                                 ? priceIt->second
-                                 : 1.0;
-        return absoluteQty * price;
+    if (riskLimits_.maxExposure <= 0.0) {
+        return true;
+    }
+
+    const auto requireMarkPrice = [this](const std::string& sym) -> std::optional<double> {
+        auto it = mark_prices_.find(sym);
+        if (it == mark_prices_.end() || it->second <= 0.0) {
+            return std::nullopt;
+        }
+        return it->second;
     };
 
-    double projectedExposure = notional(order.symbol, projectedPosition);
+    const auto notional = [&](const std::string& sym, double qty) -> std::optional<double> {
+        const double absoluteQty = std::abs(qty);
+        auto price = requireMarkPrice(sym);
+        if (!price) {
+            LOG_WARN("Rejecting order: missing Pump.fun mark price for " + sym);
+            return std::nullopt;
+        }
+        return absoluteQty * *price;
+    };
+
+    auto orderExposure = notional(order.symbol, projectedPosition);
+    if (!orderExposure) {
+        return false;
+    }
+
+    double projectedExposure = *orderExposure;
     for (const auto& [symbol, qty] : positions_) {
         if (symbol == order.symbol) {
             continue;
         }
-        projectedExposure += notional(symbol, qty);
+        auto exposure = notional(symbol, qty);
+        if (!exposure) {
+            return false;
+        }
+        projectedExposure += *exposure;
     }
 
-    if (riskLimits_.maxExposure > 0.0 &&
-        projectedExposure > riskLimits_.maxExposure) {
+    if (projectedExposure > riskLimits_.maxExposure) {
         return false;
     }
 
@@ -293,12 +315,19 @@ void RiskManagedEngine::evaluateAggregateRisk() const {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         double totalExposure = 0.0;
+        bool missingExposureData = false;
         for (const auto& [symbol, qty] : positions_) {
             const double absoluteQty = std::abs(qty);
             auto priceIt = mark_prices_.find(symbol);
-            const double price = (priceIt != mark_prices_.end() && priceIt->second > 0.0)
-                                     ? priceIt->second
-                                     : 1.0;
+            if (priceIt == mark_prices_.end() || priceIt->second <= 0.0) {
+                std::ostringstream oss;
+                oss << "No Pump.fun mark price available for " << symbol
+                    << "; exposure cannot be evaluated.";
+                warnings.push_back(oss.str());
+                missingExposureData = true;
+                continue;
+            }
+            const double price = priceIt->second;
             const double notional = absoluteQty * price;
             totalExposure += notional;
             if (riskLimits_.maxPosition > 0.0 &&
@@ -317,11 +346,15 @@ void RiskManagedEngine::evaluateAggregateRisk() const {
             }
         }
 
-        if (riskLimits_.maxExposure > 0.0 &&
-            totalExposure > riskLimits_.maxExposure) {
-            std::ostringstream oss;
-            oss << "Aggregate exposure limit breached (" << totalExposure << ")";
-            warnings.push_back(oss.str());
+        if (riskLimits_.maxExposure > 0.0) {
+            if (!missingExposureData && totalExposure > riskLimits_.maxExposure) {
+                std::ostringstream oss;
+                oss << "Aggregate exposure limit breached (" << totalExposure << ")";
+                warnings.push_back(oss.str());
+            } else if (missingExposureData) {
+                warnings.push_back(
+                    "Aggregate exposure unknown: awaiting Pump.fun mark prices for all holdings.");
+            }
         }
     }
 

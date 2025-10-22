@@ -12,7 +12,8 @@
 namespace security {
 namespace {
 constexpr std::uint64_t kTimeStepSeconds = 30;
-constexpr std::size_t kTotpDigits = 6;
+constexpr std::size_t kMinTotpDigits = 6;
+constexpr std::size_t kMaxTotpDigits = 8;
 
 int char_to_base32(char c) {
     if (c >= 'A' && c <= 'Z') {
@@ -27,9 +28,9 @@ int char_to_base32(char c) {
     return -1;
 }
 
-std::string zero_pad(std::uint32_t value) {
+std::string zero_pad(std::uint32_t value, std::size_t digits) {
     std::ostringstream stream;
-    stream << std::setw(static_cast<int>(kTotpDigits)) << std::setfill('0') << value;
+    stream << std::setw(static_cast<int>(digits)) << std::setfill('0') << value;
     return stream.str();
 }
 
@@ -39,10 +40,13 @@ TotpValidator::TotpValidator() = default;
 
 bool TotpValidator::validate(const std::string &base32_secret, const std::string &code, int allowed_drift,
                              std::chrono::system_clock::time_point now) const {
-    if (code.size() != kTotpDigits || !std::all_of(code.begin(), code.end(), ::isdigit)) {
+    const auto isDigit = [](unsigned char c) { return std::isdigit(c) != 0; };
+    if (code.size() < kMinTotpDigits || code.size() > kMaxTotpDigits ||
+        !std::all_of(code.begin(), code.end(), [&](char c) { return isDigit(static_cast<unsigned char>(c)); })) {
         return false;
     }
 
+    const std::size_t digits = code.size();
     const auto secret = base32_decode(base32_secret);
     if (secret.empty()) {
         return false;
@@ -56,8 +60,9 @@ bool TotpValidator::validate(const std::string &base32_secret, const std::string
         if (candidate < 0) {
             continue;
         }
-        const std::uint32_t generated = generate_totp(secret, static_cast<std::uint64_t>(candidate));
-        if (zero_pad(generated) == code) {
+        const std::uint32_t generated =
+            generate_totp(secret, static_cast<std::uint64_t>(candidate), digits);
+        if (zero_pad(generated, digits) == code) {
             return true;
         }
     }
@@ -92,7 +97,9 @@ std::vector<std::uint8_t> TotpValidator::base32_decode(const std::string &input)
     return output;
 }
 
-std::uint32_t TotpValidator::generate_totp(const std::vector<std::uint8_t> &secret, std::uint64_t counter) {
+std::uint32_t TotpValidator::generate_totp(const std::vector<std::uint8_t> &secret,
+                                           std::uint64_t counter,
+                                           std::size_t digits) {
     std::array<unsigned char, sizeof(counter)> counter_bytes{};
     auto moving_counter = counter;
     for (int i = static_cast<int>(counter_bytes.size()) - 1; i >= 0; --i) {
@@ -112,7 +119,7 @@ std::uint32_t TotpValidator::generate_totp(const std::vector<std::uint8_t> &secr
                                  ((hash[offset + 2] & 0xFF) << 8) | (hash[offset + 3] & 0xFF);
 
     std::uint32_t mod = 1;
-    for (std::size_t i = 0; i < kTotpDigits; ++i) {
+    for (std::size_t i = 0; i < digits; ++i) {
         mod *= 10;
     }
     return binary % mod;

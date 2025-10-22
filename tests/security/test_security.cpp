@@ -22,6 +22,11 @@ bool TestTotpValidation() {
         return false;
     }
 
+    if (!validator.validate(secret, "94742275", 1, fixed_time)) {
+        std::cerr << "TOTP validator failed to accept known-good 8-digit code" << std::endl;
+        return false;
+    }
+
     if (validator.validate(secret, "000000", 1, fixed_time)) {
         std::cerr << "TOTP validator accepted an invalid code" << std::endl;
         return false;
@@ -29,6 +34,11 @@ bool TestTotpValidation() {
 
     if (validator.validate(secret, "74227", 1, fixed_time)) {
         std::cerr << "TOTP validator accepted a short code" << std::endl;
+        return false;
+    }
+
+    if (validator.validate(secret, "947422750", 1, fixed_time)) {
+        std::cerr << "TOTP validator accepted an overlong code" << std::endl;
         return false;
     }
 

@@ -1,5 +1,6 @@
 #include "secret_store.h"
 
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
@@ -22,7 +23,7 @@ void secure_zero(void *data, std::size_t size) {
 #if defined(_WIN32)
     SecureZeroMemory(data, size);
 #else
-    std::memset(data, 0, size);
+    OPENSSL_cleanse(data, size);
 #endif
 }
 
@@ -103,7 +104,13 @@ void SecretStore::save(const std::filesystem::path &path) const {
 }
 
 void SecretStore::set_secret(const std::string &key, const std::string &value) {
-    secrets_[key] = value;
+    auto it = secrets_.find(key);
+    if (it != secrets_.end()) {
+        secure_zero(it->second.data(), it->second.size());
+        it->second.assign(value);
+    } else {
+        secrets_.emplace(key, value);
+    }
 }
 
 std::optional<std::string> SecretStore::get_secret(const std::string &key) const {
