@@ -1,6 +1,7 @@
 #include "ui/imgui_trading_app.h"
 
 #include <algorithm>
+#include <cmath>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -155,12 +156,32 @@ void TradingImGuiApp::renderOrderEntrySection() {
             return;
         }
 
-        trading::Order order{symbol, order_entry_.quantity, order_entry_.price};
-        engine_->submitOrder(order);
+        const double raw_quantity = order_entry_.quantity;
+        if (raw_quantity == 0.0) {
+            enqueueLogMessage("Cannot submit order: quantity must be non-zero");
+            return;
+        }
+
+        const bool is_buy = raw_quantity > 0.0;
+        trading::OrderRequest request;
+        request.symbol = std::move(symbol);
+        request.quantity = std::abs(raw_quantity);
+        if (order_entry_.price > 0.0) {
+            request.limitPrice = order_entry_.price;
+        }
+
+        const auto receipt = is_buy ? engine_->buy(request) : engine_->sell(request);
 
         std::ostringstream oss;
-        oss << "Submitted order: " << order.symbol << " qty=" << order.quantity
-            << " price=" << order.price;
+        oss << "Submitted " << (is_buy ? "buy" : "sell") << " order for "
+            << request.symbol << " qty=" << request.quantity;
+        if (request.limitPrice) {
+            oss << " @ " << *request.limitPrice;
+        }
+        oss << "\nEngine response: " << receipt.message;
+        if (!receipt.orderId.empty()) {
+            oss << " (" << receipt.orderId << ")";
+        }
         enqueueLogMessage(oss.str());
     }
 }
