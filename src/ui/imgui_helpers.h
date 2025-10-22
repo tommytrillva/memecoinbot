@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cfloat>
 
 #if __has_include(<imgui.h>)
 #include <imgui.h>
@@ -9,6 +10,15 @@ struct ImVec2 {
     float x;
     float y;
     ImVec2(float value_x = 0.0f, float value_y = 0.0f) : x(value_x), y(value_y) {}
+};
+
+struct ImVec4 {
+    float x;
+    float y;
+    float z;
+    float w;
+    ImVec4(float value_x = 0.0f, float value_y = 0.0f, float value_z = 0.0f, float value_w = 0.0f)
+        : x(value_x), y(value_y), z(value_z), w(value_w) {}
 };
 
 namespace ImGui {
@@ -31,6 +41,8 @@ inline bool Begin(const char*, bool* = nullptr, int = 0) { return true; }
 inline void End() {}
 inline void Text(const char*, ...) {}
 inline void TextUnformatted(const char*) {}
+inline void TextWrapped(const char*, ...) {}
+inline void TextColored(const ImVec4&, const char*, ...) {}
 inline void Separator() {}
 inline bool Button(const char*, const ImVec2& = ImVec2()) { return false; }
 inline bool Checkbox(const char*, bool*) { return false; }
@@ -43,6 +55,11 @@ inline bool BeginChild(const char*, const ImVec2& = ImVec2(), bool = false, int 
 inline void EndChild() {}
 inline void ShowDemoWindow(bool*) {}
 inline void Dummy(const ImVec2&) {}
+inline void Spacing() {}
+inline ImVec2 GetContentRegionAvail() { return ImVec2(400.0f, 400.0f); }
+inline void PlotLines(const char*, const float*, int, int = 0, const char* = nullptr, float = FLT_MAX,
+                      float = FLT_MAX, ImVec2 = ImVec2()) {}
+inline void ProgressBar(float, const ImVec2& = ImVec2(), const char* = nullptr) {}
 }  // namespace ImGui
 #endif
 
