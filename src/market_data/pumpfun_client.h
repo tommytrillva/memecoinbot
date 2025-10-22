@@ -106,6 +106,9 @@ class PumpFunClient {
   // Stops and removes a subscription by id.
   void unsubscribe(SubscriptionId id);
 
+  // Returns true if the specified subscription has encountered a callback error.
+  bool subscriptionHadCallbackError(SubscriptionId id) const;
+
   // Stops all outstanding polling subscriptions (e.g., when shutting down the engine).
   void stopAll();
 
@@ -121,6 +124,7 @@ class PumpFunClient {
     QuoteCallback callback;
     std::chrono::milliseconds interval;
     std::atomic<bool> active{true};
+    std::atomic<bool> callback_error{false};
     std::thread worker;
   };
 

@@ -203,13 +203,28 @@ PumpFunClient::SubscriptionId PumpFunClient::subscribeToQuotes(const std::string
     subscriptions_.emplace(id, subscription);
   }
 
-  subscription->worker = std::thread([this, subscription]() {
+  subscription->worker = std::thread([this, subscription, id]() {
     while (running_.load() && subscription->active.load()) {
       try {
         const TokenQuote quote = fetchTokenQuote(subscription->token_mint);
-        subscription->callback(quote);
+        try {
+          subscription->callback(quote);
+          subscription->callback_error.store(false);
+        } catch (const std::exception& callback_ex) {
+          subscription->callback_error.store(true);
+          std::cerr << "PumpFunClient quote callback error (subscription " << id
+                    << ", token " << subscription->token_mint << "): " << callback_ex.what()
+                    << std::endl;
+        } catch (...) {
+          subscription->callback_error.store(true);
+          std::cerr << "PumpFunClient quote callback error (subscription " << id
+                    << ", token " << subscription->token_mint << "): unknown exception"
+                    << std::endl;
+        }
       } catch (const std::exception& ex) {
-        std::cerr << "PumpFunClient quote polling error: " << ex.what() << std::endl;
+        std::cerr << "PumpFunClient quote polling error (subscription " << id
+                  << ", token " << subscription->token_mint << "): " << ex.what()
+                  << std::endl;
       }
 
       const auto wake_time = std::chrono::steady_clock::now() + subscription->interval;
@@ -240,6 +255,15 @@ void PumpFunClient::unsubscribe(SubscriptionId id) {
       subscription->worker.join();
     }
   }
+}
+
+bool PumpFunClient::subscriptionHadCallbackError(SubscriptionId id) const {
+  std::lock_guard<std::mutex> lock(subscriptions_mutex_);
+  auto it = subscriptions_.find(id);
+  if (it == subscriptions_.end() || !it->second) {
+    return false;
+  }
+  return it->second->callback_error.load();
 }
 
 void PumpFunClient::stopAll() {
