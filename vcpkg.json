@@ -2,9 +2,11 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "memecoinbot",
   "version": "0.1.0",
-  "builtin-baseline": "54d5d612ef8080396b079f8c3d323f7fd5401399",
+  "builtin-baseline": "7220a4eebf20515cdd9c34721e15ca082bae9038",
   "dependencies": [
     "curl",
-    "openssl"
+    "openssl",
+    "glfw3",
+    "imgui"
   ]
 }
