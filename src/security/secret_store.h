@@ -59,6 +59,7 @@ class SecretStore {
     static std::string serialize(const std::unordered_map<std::string, std::string> &payload);
     static std::unordered_map<std::string, std::string> deserialize(const std::string &payload);
 
+    static std::vector<unsigned char> parse_field(const std::string &field_name, const std::string &line);
     static std::string base64_encode(const std::vector<unsigned char> &input);
     static std::vector<unsigned char> base64_decode(const std::string &input);
 

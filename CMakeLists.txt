@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(CURL REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(Threads REQUIRED)
 
 add_library(trading_engine STATIC
@@ -18,6 +19,10 @@ target_include_directories(trading_engine
 )
 
 target_compile_features(trading_engine PUBLIC cxx_std_17)
+target_link_libraries(trading_engine
+    PUBLIC
+        Threads::Threads
+)
 
 add_library(trading_ui STATIC
     src/ui/imgui_trading_app.cpp
@@ -69,4 +74,42 @@ target_link_libraries(pumpfun_client_tests
 target_compile_features(pumpfun_client_tests PRIVATE cxx_std_17)
 
 add_test(NAME pumpfun_client_tests COMMAND pumpfun_client_tests)
+
+add_executable(security_tests
+    tests/security/test_security.cpp
+    src/security/secret_store.cpp
+    src/security/totp.cpp
+)
+
+target_include_directories(security_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(security_tests
+    PRIVATE
+        OpenSSL::Crypto
+)
+
+target_compile_features(security_tests PRIVATE cxx_std_17)
+
+add_test(NAME security_tests COMMAND security_tests)
+
+add_executable(trading_engine_tests
+    tests/trading/test_engine.cpp
+)
+
+target_include_directories(trading_engine_tests
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(trading_engine_tests
+    PRIVATE
+        trading_engine
+)
+
+target_compile_features(trading_engine_tests PRIVATE cxx_std_17)
+
+add_test(NAME trading_engine_tests COMMAND trading_engine_tests)
 

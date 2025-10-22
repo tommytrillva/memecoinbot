@@ -45,19 +45,6 @@ void write_binary(const std::filesystem::path &path, const std::vector<unsigned 
     stream.write(reinterpret_cast<const char *>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
 }
 
-std::vector<unsigned char> parse_field(const std::string &field_name, const std::string &line) {
-    const auto delimiter = line.find(':');
-    if (delimiter == std::string::npos) {
-        throw std::runtime_error("Invalid field in encrypted payload: " + line);
-    }
-    const std::string key = line.substr(0, delimiter);
-    if (key != field_name) {
-        throw std::runtime_error("Unexpected field '" + key + "' (expected '" + field_name + "')");
-    }
-    const std::string encoded = line.substr(delimiter + 1);
-    return SecretStore::base64_decode(encoded);
-}
-
 }  // namespace
 
 SecretStore::SecretStore(std::string master_password)
@@ -298,6 +285,19 @@ std::unordered_map<std::string, std::string> SecretStore::deserialize(const std:
         result.emplace(line.substr(0, pos), line.substr(pos + 1));
     }
     return result;
+}
+
+std::vector<unsigned char> SecretStore::parse_field(const std::string &field_name, const std::string &line) {
+    const auto delimiter = line.find(':');
+    if (delimiter == std::string::npos) {
+        throw std::runtime_error("Invalid field in encrypted payload: " + line);
+    }
+    const std::string key = line.substr(0, delimiter);
+    if (key != field_name) {
+        throw std::runtime_error("Unexpected field '" + key + "' (expected '" + field_name + "')");
+    }
+    const std::string encoded = line.substr(delimiter + 1);
+    return base64_decode(encoded);
 }
 
 namespace {
