@@ -1,5 +1,7 @@
 #include "trading/engine.h"
 
+#include "common/logging.h"
+
 #include <chrono>
 #include <cmath>
 #include <iomanip>
@@ -82,6 +84,19 @@ void RiskManagedEngine::subscribeToStatusUpdates(StatusCallback callback) {
     }
     std::lock_guard<std::mutex> lock(callbacksMutex_);
     statusSubscribers_.push_back(std::move(callback));
+}
+
+void RiskManagedEngine::updateMarkPrice(const std::string& symbol, double price) {
+    if (symbol.empty()) {
+        return;
+    }
+    if (price <= 0.0) {
+        LOG_WARN("Ignoring non-positive mark price update for " + symbol);
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    mark_prices_[symbol] = price;
 }
 
 OrderReceipt RiskManagedEngine::submitOrder(const OrderRequest& request, Order::Side side) {
@@ -213,13 +228,13 @@ void RiskManagedEngine::routePendingOrders(std::vector<Order>& orders) {
 }
 
 void RiskManagedEngine::handleOrderRouting(const Order& order) {
-    std::cout << "Routing order: "
-              << (order.side == Order::Side::Buy ? "BUY " : "SELL ")
-              << order.symbol << " qty=" << order.quantity;
+    std::ostringstream oss;
+    oss << "Routing order: " << (order.side == Order::Side::Buy ? "BUY " : "SELL ")
+        << order.symbol << " qty=" << order.quantity;
     if (order.limitPrice) {
-        std::cout << " price=" << *order.limitPrice;
+        oss << " price=" << *order.limitPrice;
     }
-    std::cout << "\n";
+    LOG_INFO(oss.str());
     // Placeholder: integrate with venue/exchange adapters here.
 }
 
@@ -248,12 +263,21 @@ bool RiskManagedEngine::applyRiskChecks(const Order& order) const {
         return false;
     }
 
-    double projectedExposure = std::abs(projectedPosition);
+    const auto notional = [this](const std::string& sym, double qty) {
+        const double absoluteQty = std::abs(qty);
+        auto priceIt = mark_prices_.find(sym);
+        const double price = (priceIt != mark_prices_.end() && priceIt->second > 0.0)
+                                 ? priceIt->second
+                                 : 1.0;
+        return absoluteQty * price;
+    };
+
+    double projectedExposure = notional(order.symbol, projectedPosition);
     for (const auto& [symbol, qty] : positions_) {
         if (symbol == order.symbol) {
             continue;
         }
-        projectedExposure += std::abs(qty);
+        projectedExposure += notional(symbol, qty);
     }
 
     if (riskLimits_.maxExposure > 0.0 &&
@@ -271,12 +295,24 @@ void RiskManagedEngine::evaluateAggregateRisk() const {
         double totalExposure = 0.0;
         for (const auto& [symbol, qty] : positions_) {
             const double absoluteQty = std::abs(qty);
-            totalExposure += absoluteQty;
+            auto priceIt = mark_prices_.find(symbol);
+            const double price = (priceIt != mark_prices_.end() && priceIt->second > 0.0)
+                                     ? priceIt->second
+                                     : 1.0;
+            const double notional = absoluteQty * price;
+            totalExposure += notional;
             if (riskLimits_.maxPosition > 0.0 &&
                 absoluteQty > riskLimits_.maxPosition) {
                 std::ostringstream oss;
                 oss << "Position limit breached for symbol " << symbol
                     << " (" << absoluteQty << ")";
+                warnings.push_back(oss.str());
+            }
+            if (riskLimits_.maxExposure > 0.0 &&
+                notional > riskLimits_.maxExposure) {
+                std::ostringstream oss;
+                oss << "Exposure limit breached for symbol " << symbol
+                    << " (notional " << notional << ")";
                 warnings.push_back(oss.str());
             }
         }

@@ -27,6 +27,15 @@ void TelegramClient::handle_trade_request(const TradeRequest &request) {
     if (request.chat_id.empty()) {
         throw std::runtime_error("Missing chat identifier in trade request");
     }
+    if (request.symbol.empty()) {
+        throw std::runtime_error("Trade request must include a token symbol");
+    }
+    if (request.amount <= 0.0) {
+        throw std::runtime_error("Trade quantity must be positive");
+    }
+    if (request.side != "buy" && request.side != "sell") {
+        throw std::runtime_error("Trade side must be 'buy' or 'sell'");
+    }
     if (request.otp_code.empty()) {
         throw std::runtime_error("Two-factor code is required before executing trades");
     }

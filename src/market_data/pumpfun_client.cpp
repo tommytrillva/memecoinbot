@@ -1,7 +1,10 @@
 #include "market_data/pumpfun_client.h"
 
+#include "common/logging.h"
+
 #include <curl/curl.h>
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <iomanip>
@@ -89,12 +92,14 @@ PumpFunClient::PumpFunClient(std::string base_url,
                              std::string api_key,
                              std::string metadata_endpoint,
                              std::string quote_endpoint,
-                             std::string candles_endpoint)
+                             std::string candles_endpoint,
+                             HttpGetFunction http_getter)
     : base_url_(normalizeBaseUrl(std::move(base_url))),
       api_key_(std::move(api_key)),
       metadata_endpoint_(ensureEndpoint(metadata_endpoint)),
       quote_endpoint_(ensureEndpoint(quote_endpoint)),
-      candles_endpoint_(ensureEndpoint(candles_endpoint)) {
+      candles_endpoint_(ensureEndpoint(candles_endpoint)),
+      http_getter_(std::move(http_getter)) {
   curlGlobalGuard().acquire();
   curl_initialized_ = true;
 
@@ -124,6 +129,19 @@ void PumpFunClient::setDefaultHeaders(std::unordered_map<std::string, std::strin
 std::unordered_map<std::string, std::string> PumpFunClient::defaultHeaders() const {
   std::lock_guard<std::mutex> lock(http_mutex_);
   return default_headers_;
+}
+
+void PumpFunClient::setRetryPolicy(std::size_t max_attempts,
+                                   std::chrono::milliseconds initial_backoff) {
+  if (max_attempts == 0) {
+    throw std::invalid_argument("max_attempts must be at least 1");
+  }
+  if (initial_backoff.count() < 0) {
+    throw std::invalid_argument("initial_backoff must be non-negative");
+  }
+
+  max_attempts_.store(max_attempts);
+  retry_backoff_ms_.store(initial_backoff.count());
 }
 
 TokenMetadata PumpFunClient::fetchTokenMetadata(
@@ -250,19 +268,19 @@ PumpFunClient::SubscriptionId PumpFunClient::subscribeToQuotes(const std::string
           subscription->callback_error.store(false);
         } catch (const std::exception& callback_ex) {
           subscription->callback_error.store(true);
-          std::cerr << "PumpFunClient quote callback error (subscription " << id
-                    << ", token " << subscription->token_mint << "): " << callback_ex.what()
-                    << std::endl;
+          LOG_ERROR(std::string("PumpFunClient quote callback error (subscription ") +
+                    std::to_string(id) + ", token " + subscription->token_mint + "): " +
+                    callback_ex.what());
         } catch (...) {
           subscription->callback_error.store(true);
-          std::cerr << "PumpFunClient quote callback error (subscription " << id
-                    << ", token " << subscription->token_mint << "): unknown exception"
-                    << std::endl;
+          LOG_ERROR(std::string("PumpFunClient quote callback error (subscription ") +
+                    std::to_string(id) + ", token " + subscription->token_mint +
+                    "): unknown exception");
         }
       } catch (const std::exception& ex) {
-        std::cerr << "PumpFunClient quote polling error (subscription " << id
-                  << ", token " << subscription->token_mint << "): " << ex.what()
-                  << std::endl;
+        LOG_WARN(std::string("PumpFunClient quote polling error (subscription ") +
+                 std::to_string(id) + ", token " + subscription->token_mint + "): " +
+                 ex.what());
       }
 
       const auto wake_time = std::chrono::steady_clock::now() + subscription->interval;
@@ -397,6 +415,45 @@ std::string PumpFunClient::buildUrl(
 }
 
 std::string PumpFunClient::performGet(
+    const std::string& endpoint,
+    const std::vector<std::pair<std::string, std::string>>& query_params,
+    const std::unordered_map<std::string, std::string>& extra_headers) const {
+  const std::size_t max_attempts = std::max<std::size_t>(1, max_attempts_.load());
+  std::chrono::milliseconds backoff{retry_backoff_ms_.load()};
+
+  std::size_t attempt = 0;
+  while (true) {
+    ++attempt;
+    try {
+      HttpGetFunction getter;
+      {
+        std::lock_guard<std::mutex> lock(http_mutex_);
+        getter = http_getter_;
+      }
+
+      if (getter) {
+        return getter(endpoint, query_params, extra_headers);
+      }
+
+      return performCurlGet(endpoint, query_params, extra_headers);
+    } catch (const std::exception& ex) {
+      if (attempt >= max_attempts) {
+        throw;
+      }
+
+      LOG_WARN(std::string("PumpFunClient GET failed (attempt ") + std::to_string(attempt) +
+               "/" + std::to_string(max_attempts) + ") for " + buildUrl(endpoint, query_params) +
+               ": " + ex.what());
+
+      if (backoff.count() > 0) {
+        std::this_thread::sleep_for(backoff);
+      }
+      backoff = std::chrono::milliseconds(backoff.count() == 0 ? 0 : backoff.count() * 2);
+    }
+  }
+}
+
+std::string PumpFunClient::performCurlGet(
     const std::string& endpoint,
     const std::vector<std::pair<std::string, std::string>>& query_params,
     const std::unordered_map<std::string, std::string>& extra_headers) const {

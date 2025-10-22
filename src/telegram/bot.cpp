@@ -1,11 +1,14 @@
 #include "telegram/bot.h"
 
+#include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <exception>
 #include <iomanip>
-#include <iostream>
 #include <sstream>
 #include <stdexcept>
+
+#include "common/logging.h"
 
 namespace telegram {
 namespace {
@@ -13,15 +16,42 @@ constexpr const char* kHelpText =
     "Available commands:\n"
     "/start - Subscribe to trading updates\n"
     "/help - Show this message\n"
-    "/buy <symbol> <quantity> [limit_price] - Execute a buy order\n"
-    "/sell <symbol> <quantity> [limit_price] - Execute a sell order\n"
+    "/buy <symbol> <quantity> [limit_price] <otp> - Execute a buy order\n"
+    "/sell <symbol> <quantity> [limit_price] <otp> - Execute a sell order\n"
     "/status [symbol] - Get the latest portfolio or symbol status";
 }  // namespace
 
-TelegramBot::TelegramBot(const std::string& token, trading::TradingEngine& engine)
-    : bot_(token), engine_(engine), aliveFlag_(std::make_shared<std::atomic<bool>>(true)) {
+TelegramBot::TelegramBot(const std::string& token,
+                         trading::TradingEngine& engine,
+                         TelegramClient& client)
+    : bot_(token), engine_(engine), client_(client),
+      aliveFlag_(std::make_shared<std::atomic<bool>>(true)) {
     registerEventHandlers();
     registerEngineCallbacks();
+
+    client_.set_trade_executor([this](const telegram::TradeRequest& trade) {
+        ChatId chat_id = 0;
+        try {
+            chat_id = static_cast<ChatId>(std::stoll(trade.chat_id));
+        } catch (const std::exception& ex) {
+            LOG_ERROR(std::string("Unable to parse chat id for trade execution: ") + ex.what());
+            return;
+        }
+
+        trading::OrderRequest request;
+        request.symbol = trade.symbol;
+        request.quantity = trade.amount;
+        request.limitPrice = trade.limit_price;
+
+        trading::OrderReceipt receipt;
+        if (trade.side == "sell") {
+            receipt = engine_.sell(request);
+        } else {
+            receipt = engine_.buy(request);
+        }
+
+        enqueueMessage(chat_id, formatReceipt(receipt));
+    });
 }
 
 TelegramBot::~TelegramBot() {
@@ -56,7 +86,7 @@ void TelegramBot::start() {
                 if (!running_.load()) {
                     break;
                 }
-                std::cerr << "Telegram long poll error: " << ex.what() << std::endl;
+                LOG_WARN(std::string("Telegram long poll error: ") + ex.what());
                 std::this_thread::sleep_for(std::chrono::seconds(1));
             }
         }
@@ -178,9 +208,16 @@ void TelegramBot::handleBuy(const TgBot::Message::Ptr& message) {
 
     const auto tokens = tokenize(message->text);
     try {
-        const auto request = parseOrderRequest(tokens);
-        const auto receipt = engine_.buy(request);
-        enqueueMessage(message->chat->id, formatReceipt(receipt));
+        const auto parsed = parseTradeCommand(tokens);
+        telegram::TradeRequest trade;
+        trade.chat_id = std::to_string(message->chat->id);
+        trade.symbol = parsed.order.symbol;
+        trade.amount = parsed.order.quantity;
+        trade.limit_price = parsed.order.limitPrice;
+        trade.side = "buy";
+        trade.otp_code = parsed.otp;
+
+        client_.handle_trade_request(trade);
     } catch (const std::exception& ex) {
         enqueueMessage(message->chat->id,
                        std::string("❌ Unable to execute buy order: ") + ex.what());
@@ -196,9 +233,16 @@ void TelegramBot::handleSell(const TgBot::Message::Ptr& message) {
 
     const auto tokens = tokenize(message->text);
     try {
-        const auto request = parseOrderRequest(tokens);
-        const auto receipt = engine_.sell(request);
-        enqueueMessage(message->chat->id, formatReceipt(receipt));
+        const auto parsed = parseTradeCommand(tokens);
+        telegram::TradeRequest trade;
+        trade.chat_id = std::to_string(message->chat->id);
+        trade.symbol = parsed.order.symbol;
+        trade.amount = parsed.order.quantity;
+        trade.limit_price = parsed.order.limitPrice;
+        trade.side = "sell";
+        trade.otp_code = parsed.otp;
+
+        client_.handle_trade_request(trade);
     } catch (const std::exception& ex) {
         enqueueMessage(message->chat->id,
                        std::string("❌ Unable to execute sell order: ") + ex.what());
@@ -269,29 +313,37 @@ std::optional<double> TelegramBot::parseDouble(const std::string& token) {
     }
 }
 
-trading::OrderRequest TelegramBot::parseOrderRequest(const std::vector<std::string>& tokens) const {
-    if (tokens.size() < 3) {
-        throw std::invalid_argument("Command requires <symbol> <quantity> [limit_price].");
+TelegramBot::ParsedTradeCommand TelegramBot::parseTradeCommand(const std::vector<std::string>& tokens) const {
+    if (tokens.size() < 4 || tokens.size() > 5) {
+        throw std::invalid_argument("Command requires <symbol> <quantity> [limit_price] <otp>.");
     }
 
-    trading::OrderRequest request;
-    request.symbol = tokens[1];
+    ParsedTradeCommand parsed;
+    parsed.order.symbol = tokens[1];
 
     const auto quantity = parseDouble(tokens[2]);
     if (!quantity || *quantity <= 0.0) {
         throw std::invalid_argument("Quantity must be a positive number.");
     }
-    request.quantity = *quantity;
+    parsed.order.quantity = *quantity;
 
-    if (tokens.size() >= 4) {
+    const std::size_t otp_index = tokens.size() == 5 ? 4 : 3;
+    if (otp_index == 4) {
         const auto price = parseDouble(tokens[3]);
         if (!price || *price <= 0.0) {
             throw std::invalid_argument("Limit price must be a positive number.");
         }
-        request.limitPrice = price;
+        parsed.order.limitPrice = price;
     }
 
-    return request;
+    const std::string& otp = tokens[otp_index];
+    if (otp.size() < 6 || otp.size() > 8 ||
+        !std::all_of(otp.begin(), otp.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        throw std::invalid_argument("OTP must be a 6-8 digit numeric code.");
+    }
+    parsed.otp = otp;
+
+    return parsed;
 }
 
 std::string TelegramBot::formatReceipt(const trading::OrderReceipt& receipt) const {
@@ -361,7 +413,7 @@ void TelegramBot::dispatchLoop() {
         try {
             bot_.getApi().sendMessage(payload.first, payload.second);
         } catch (const std::exception& ex) {
-            std::cerr << "Failed to send Telegram message: " << ex.what() << std::endl;
+            LOG_WARN(std::string("Failed to send Telegram message: ") + ex.what());
         }
     }
 }

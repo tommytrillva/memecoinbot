@@ -43,7 +43,8 @@ primitives (secret store + TOTP), the Telegram bot, and the ImGui console.
 
 * **Telegram bot** – link `telegram::TelegramBot` against a real `TgBot::Bot`
   token and run `start()`. Ensure the encrypted secret store already contains
-  `telegram/totp/<chat_id>` entries before enabling trade commands.
+  `telegram/totp/<chat_id>` entries before enabling trade commands; operators
+  must append their 6–8 digit OTP to `/buy` and `/sell` invocations.
 
 ## Stopping components
 
@@ -62,16 +63,17 @@ process exit to avoid orphaned workers.
 ## Pump.fun rate limiting
 
 * Requests are synchronous (`libcurl`) with a 10 second timeout.
-* There is **no** retry/backoff; wrap `PumpFunClient::fetch*` with your own
-  retry policy if required.
+* Built-in exponential backoff retries transient failures three times (policy
+  is configurable via `setRetryPolicy`).
 * Quote polling spawns one thread per subscription. Use `stopAll()` before
   shutdown to join threads.
 
 ## Monitoring & telemetry
 
-* Logging currently uses stdout/stderr. Pipe into journald or a log collector.
-* Track repeated TOTP failures and Pump.fun HTTP errors; both are surfaced via
-  `std::cerr` in the existing code.
+* Structured logging (timestamp + severity) is emitted through
+  `common::Logger`; forward stdout/stderr to journald or your collector.
+* Track repeated TOTP failures and Pump.fun HTTP issues; both are surfaced via
+  warning/error log lines.
 
 ## Incident response checklist
 

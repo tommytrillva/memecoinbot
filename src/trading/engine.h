@@ -35,6 +35,8 @@ public:
     OrderReceipt sell(const OrderRequest& request) override;
     StatusReport status(const std::optional<std::string>& symbol) const override;
 
+    void updateMarkPrice(const std::string& symbol, double price) override;
+
     void subscribeToTradeUpdates(TradeCallback callback) override;
     void subscribeToAlerts(AlertCallback callback) override;
     void subscribeToStatusUpdates(StatusCallback callback) override;
@@ -71,6 +73,7 @@ private:
 
     std::vector<Order> orderQueue_;
     std::unordered_map<std::string, double> positions_;
+    std::unordered_map<std::string, double> mark_prices_;
     RiskLimits riskLimits_;
 
     mutable std::mutex callbacksMutex_;
