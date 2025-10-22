@@ -237,7 +237,14 @@ void PumpFunClient::unsubscribe(SubscriptionId id) {
   if (subscription) {
     subscription->active.store(false);
     if (subscription->worker.joinable()) {
-      subscription->worker.join();
+      const auto worker_id = subscription->worker.get_id();
+      const auto current_id = std::this_thread::get_id();
+      if (worker_id == current_id) {
+        // Avoid joining from the worker thread itself since std::thread::join would deadlock.
+        subscription->worker.detach();
+      } else {
+        subscription->worker.join();
+      }
     }
   }
 }
